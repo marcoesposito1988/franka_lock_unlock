@@ -111,6 +111,13 @@ class FrankaLockUnlock:
         assert fci_request.status_code == 200, "Error activating FCI."
         print("Successfully activated FCI.")
 
+    def _shutdown(self):
+        print("Shutting down the robot...")
+        fci_request = self._session.post(urljoin(self._hostname, f'/admin/api/shutdown'), \
+                                         json={'token': self._token})
+        assert fci_request.status_code == 200, "Error shutting down the robot."
+        print("Successfully started shutdown procedure; wait until the fans have turned off.")
+
     def _lock_unlock(self, unlock: bool, force: bool = False):
         print(f'{"Unlocking" if unlock else "Locking"} the robot...')
         action = self._session.post(urljoin(self._hostname, f'/desk/api/robot/{"open" if unlock else "close"}-brakes'), \
@@ -119,7 +126,7 @@ class FrankaLockUnlock:
         assert action.status_code == 200, "Error requesting brake open/close action."
         print(f'Successfully {"unlocked" if unlock else "locked"} the robot.')
 
-    def run(self, unlock: bool = False, force: bool = False, wait: bool = False, request: bool = False, persistent: bool = False, fci: bool = False) -> None:
+    def run(self, unlock: bool = False, force: bool = False, wait: bool = False, request: bool = False, persistent: bool = False, shutdown: bool = False, fci: bool = False) -> None:
         assert not request or wait, "Requesting control without waiting for obtaining control is not supported."
         assert not fci or unlock, "Activating FCI without unlocking is not possible."
         assert not fci or persistent, "Activating FCI without persistence is not possible."
@@ -128,6 +135,9 @@ class FrankaLockUnlock:
             assert self._token is not None or self._get_active_token_id() is None or wait, "Error requesting control, the robot is currently in use."
             while True:
                 self._request_token(physically=request)
+                if shutdown:
+                    self._shutdown()
+                    return
                 try:
                     # Consider the timeout of 30 s for requesting physical access to the robot
                     for _ in range(20) if request else count():
@@ -161,6 +171,7 @@ if __name__ == '__main__':
     parser.add_argument('hostname', help='The Franka Desk IP address or hostname, for example "1.2.3.4".')
     parser.add_argument('username', help='The Franka Desk username, usually "admin".')
     parser.add_argument('password', help='The Franka Desk password.')
+    parser.add_argument('-s', '--shutdown', action='store_true', help='Shut down the robot.')
     parser.add_argument('-u', '--unlock', action='store_true', help='Unlock the brakes.')
     parser.add_argument('-l', '--relock', action='store_true', help='Relock the brakes on exit.')
     parser.add_argument('-w', '--wait', action='store_true', help='Wait in case the robot web UI is currently in use.')
@@ -171,7 +182,7 @@ if __name__ == '__main__':
     assert not args.relock or args.persistent, "Relocking without persistence would cause an immediate unlock-lock cycle."
 
     franka_lock_unlock = FrankaLockUnlock(hostname=args.hostname, username=args.username, password=args.password, relock=args.relock)
-    franka_lock_unlock.run(unlock=args.unlock, wait=args.wait, request=args.request, persistent=args.persistent, fci=args.fci)
+    franka_lock_unlock.run(unlock=args.unlock, wait=args.wait, request=args.request, persistent=args.persistent, shutdown=args.shutdown, fci=args.fci)
 
     if args.persistent:
         print("Keeping persistent connection...")
